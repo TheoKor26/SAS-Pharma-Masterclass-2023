@@ -218,13 +218,13 @@ run;
 proc glimmix  data=asthma_matched_cls method=rspl;
   class   PatientID treat_bin sex sev2;
   model exacerb_12m = treat_bin|month age sev2  comorbid_adip  comorbid_rhino/ dist=poisson link=log
-  																		 SOLUTION ODDSRATIO;
-  RANDOM INTERCEPT  / SUBJECT=PatientID type=vc;
+  																		 solution oddsratio;
+  random intercept  / subject=PatientID type=vc;
     /* Inzidenzraten-Ratios (Kontraste) ausgeben */
-  ESTIMATE "Biologikum vs. Standard"
-           treat_bin 1 -1  / EXP CL;
-  LSMEANS treat_bin / ILINK PDIFF ADJUST=BON;  /* Back-transformiert auf Skala */
-  TITLE "GLMM Poisson: Exacerbation rate over time";
+  estimate "Biologic vs. Standard"
+           treat_bin 1 -1  / exp cl;
+  lsmeans treat_bin / ilink pdiff adjust=BON;  /* Back-transforming to original scale*/
+  title "GLMM Poisson: Exacerbation rate over time";
 run;
 
 
@@ -239,35 +239,35 @@ run;
    ============================================================ */
 
 ods graphics on;
-PROC PHREG DATA = asthma_matched_cls COVS(AGGREGATE);
+proc phreg data = asthma_matched_cls covs(aggregate);
 
-  CLASS treat_bin(REF='1') sex sev2(REF='1') comorbid_adip  comorbid_rhino
-        / PARAM=REF;
+  class treat_bin(ref='1') sex sev2(ref='1') comorbid_adip  comorbid_rhino
+        / param=ref;
 
 /* Stratification by Match-ID = conditional analysis */
-  MODEL time_event * event(0) = treat_bin age sex sev2 comorbid_adip comorbid_rhino  eosinophils ics_dose_prev ode_cure_prev
-        / TIES=EFRON RL;
+  model time_event * event(0) = treat_bin age sex sev2 comorbid_adip comorbid_rhino  eosinophils ics_dose_prev ode_cure_prev
+        / ties=efron rl;
 
-  STRATA  _MatchID_;                  /* looking at matched-Pairs */
+  strata  _MatchID_;                  /* looking at matched-Pairs */
   hazardratio treat_bin / diff=ref;
   baseline out=cox_surv
            survival=surv
            cumhaz=cumhaz
            / rowid=treat_bin;
-  TITLE "Stratified Cox: Time to exacerbation (PSM pairs) ";
-RUN;
+  title "Stratified Cox: Time to exacerbation (PSM pairs) ";
+run;
 ods graphics off;
 /* Then you get an output table with estimated survival and cumulative hazard,
    which you can plot later. */
 
 /* Kaplan-Meier on matched dataset */
 ods graphics on;
-PROC LIFETEST DATA  = asthma_matched_cls
-              PLOTS = survival(atrisk cl);
-  TIME   time_event * event(0);
-  STRATA treat_bin / TEST=LOGRANK;
-  TITLE  "KM curves after PSM: Biologic vs. Standard ";
-RUN;
+proc lifetest data  = asthma_matched_cls
+              plots = survival(atrisk cl);
+  time   time_event * event(0);
+  strata treat_bin / test=logrank;
+  title  "KM curves after PSM: Biologic vs. Standard ";
+run;
 ods graphics off;
 
 /* 8) Logistic regression identifies which patient characteristics predict a guideline-compliant
@@ -283,65 +283,67 @@ ods graphics off;
    ============================================================ */
 
 /* Derive recommendation variable from clinical criteria */
-DATA asthma_raw3;
-  SET asthma_raw2;
+data asthma_raw3;
+  set asthma_raw2;
 
   /* Guideline-based criteria (e.g., GINA Step 4/5): */
   bio_suitab = 0;
-  IF asthma_sev_prev >= 3 AND
+  IF asthma_sev_prev >= 3 and
      (eosinophils >= 0.30 OR base_exac >=2)
-                          THEN bio_suitab = 1;
+                          then bio_suitab = 1;
 
   /* Biomarker categories for subgroup analysis*/
-  IF      eosinophils <  0.15 THEN eos_group = "Low";
-  ELSE IF eosinophils <  0.40 THEN eos_group = "Average";
-  ELSE                          eos_group = "High";
+  if      eosinophils <  0.15 then eos_group = "Low";
+  else if eosinophils <  0.40 then eos_group = "Average";
+  else                          eos_group = "High";
 
-  IF      base_exac < 0.5  THEN exac_group = "Low";
-  ELSE IF base_exac <  2  THEN exac_group = "Average";
-  ELSE                         exac_group = "High";
-RUN;
+  if      base_exac < 0.5  then exac_group = "Low";
+  else if base_exac <  2  then exac_group = "Average";
+  else                         exac_group = "High";
+run;
 
 /* ── Logistic model: Predictors of the recommendation ────── */
-PROC LOGISTIC DATA = asthma_raw3 DESCENDING PLOTS(ONLY)=(ROC EFFECT);
+proc logistic data = asthma_raw3 descending plots(only)=(roc effect);
 
-  CLASS sex   (REF='F')
-        asthma_sev_prev (REF='1')
-        eos_group (REF='Low')
-        exac_group (REF='Low')
-        / PARAM=REF;
+  class sex   (ref='F')
+        asthma_sev_prev (ref='1')
+        eos_group (ref='Low')
+        exac_group (ref='Low')
+        / param=ref;
 
-  MODEL bio_suitab =
+  model bio_suitab =
         age sex base_exac
         eosinophils
         asthma_sev_prev comorbid_adip  comorbid_rhino
-        / FIRTH           /* Penalized MLE – stable under separation */
-          LACKFIT                   /* Hosmer-Lemeshow */
-          CLPARM=PL       /* Profil-Likelihood KI*/
-          CTABLE PPROB=0.5          /* Classification Table            */
-          RISKLIMITS                /* Odds Ratios                       */
-          OUTROC=roc_data;          /* Export ROC-curve           */
+        / firth           /* Penalized MLE – stable under separation */
+          lackfit                   /* Hosmer-Lemeshow */
+          clparam=PL       /* Profil-Likelihood KI*/
+          ctable pprob=0.5          /* Classification Table            */
+          risklimits                /* Odds Ratios                       */
+          outroc=roc_data;          /* Export ROC-curve           */
 
   /* Optimal Cut-off via Youden-Index */
-  OUTPUT OUT  = logit_scored
-         PRED = p_suitab
-         XBETA= logit_score;
+  output out  = logit_scored
+         pred = p_suitab
+         xbeta= logit_score;
 
-  TITLE "/* Logistic regression: Predictors of biologic recommendation */";
-RUN;
+  title "/* Logistic regression: Predictors of biologic recommendation */";
+run;
 
 /* ── Optimal threshold ─────────────────────────────── */
-DATA roc_optimal;
-  SET roc_data;
+data roc_optimal;
+  set roc_data;
   youden = _SENSIT_ + (1 - _1MSPEC_) - 1;
-RUN;
+run;
 
-PROC SORT DATA=roc_optimal; BY DESCENDING youden; RUN;
+proc sort data=roc_optimal;
+   by descending youden; 
+run;
 
-TITLE "Optimal Cut-off (Youden-Index)";
-PROC PRINT DATA=roc_optimal (OBS=1);
-  VAR _PROB_ _SENSIT_ _1MSPEC_ youden;
-RUN;
+title "Optimal Cut-off (Youden-Index)";
+proc print data=roc_optimal (obs=1);
+  var _PROB_ _SENSIT_ _1MSPEC_ youden;
+run;
 title;
 
 /* 9) – Decision tree translates the logistic model into clinically readable if-then rules and
@@ -354,16 +356,14 @@ title;
    Provides interpretable if-then rules for clinicians
    ============================================================ */
 
-PROC HPSPLIT DATA = asthma_raw3 seed=12345;
-
-  CLASS  sex;
-  MODEL bio_suitab= sex age base_exac
+proc hpsplit data = asthma_raw3 seed=12345;
+  class  sex;
+  model bio_suitab= sex age base_exac
         eosinophils asthma_sev_prev comorbid_adip  comorbid_rhino ;
+  grow variance;
+  prune costcomplexity;
 
-  GROW VARIANCE;
-  PRUNE COSTCOMPLEXITY;
+  code file="/home/u50238372/SAS Pharma Master Class/scoring_rule.sas"; /* export rules */
 
-  CODE FILE="/home/u50238372/SAS Pharma Master Class/scoring_rule.sas"; /* export rules */
-
-  TITLE " Decision tree: Biologic prescription rule ";
-RUN;
+  title " Decision tree: Biologic prescription rule ";
+run;
