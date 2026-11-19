@@ -1,4 +1,4 @@
-SAS Pharma Masterclass 2023
+# SAS Pharma Masterclass 2023
 Project assignment on a RWE (Real-World Evidence) scenario about Asthma-exacerbation rates and biologics recommendation in random patients.
 Following analysis steps are performed:
 Simulation of routine data and generation of random patients;
